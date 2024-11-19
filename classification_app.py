@@ -245,7 +245,6 @@ def create_classifier(classifier_name, **kwargs):
                                      algorithm=kwargs.get('algorithm-dropdown', 'auto'))
         return model
     
-
 def create_prediction_plot(
     model, X_train, X_test, y_train, y_test, Z, xx, yy, mesh_step, threshold
 ):
