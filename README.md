@@ -73,16 +73,6 @@
     ```
 
 
-
-## 依赖
-
-- Dash
-- Dash Bootstrap Components
-- Plotly
-- Scikit-learn
-- Pandas
-- Numpy
-
 ## 作者
 
 - **苟凌云**
