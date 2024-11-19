@@ -18,8 +18,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import roc_curve, auc, confusion_matrix, accuracy_score
 import numpy as np
-from sklearn.manifold import TSNE
-import umap
+from typing import List, Dict, Tuple
 
 import utils.dash_reusable_components as drc
 
@@ -201,8 +200,8 @@ def preprocess_bridge_data(data):
     return data
 
 # Function to create classifier
-@callback(
-    Output('classification-model', 'data'),
+@app.callback(
+    Output('classification-model-params', 'data'),
     Input('classifier-dropdown', 'value'),
     Input('dropdown-svm-parameter-kernel', 'value'),
     Input('slider-svm-parameter-C-power', 'value'),
@@ -210,40 +209,53 @@ def preprocess_bridge_data(data):
     Input('slider-svm-parameter-degree', 'value'),
     Input('slider-svm-parameter-gamma-power', 'value'),
     Input('slider-svm-parameter-gamma-coef', 'value'),
-    Input('max-depth-slider', 'value'),
-    Input('min-samples-split-slider', 'value'),
-    Input('min-samples-leaf-slider', 'value'),
+    Input('dt-max-depth-slider', 'value'),
+    Input('rf-max-depth-slider', 'value'),
+    Input('dt-min-samples-split-slider', 'value'),
+    Input('rf-min-samples-split-slider', 'value'),
+    Input('dt-min-samples-leaf-slider', 'value'),
+    Input('rf-min-samples-leaf-slider', 'value'),
     Input('n-estimators-slider', 'value'),
     Input('n-neighbors-slider', 'value'),
     Input('weights-dropdown', 'value'),
     Input('algorithm-dropdown', 'value'),
 )
-def create_classifier(classifier_name, **kwargs):
+def create_classifier(classifier_name, svm_kernel, svm_C_power, svm_C_coef, svm_degree, 
+                      svm_gamma_power, svm_gamma_coef, dt_max_depth, rf_max_depth, 
+                      dt_min_samples_split, rf_min_samples_split, dt_min_samples_leaf, 
+                      rf_min_samples_leaf, n_estimators, n_neighbors, weights, algorithm):
     if classifier_name == 'svm':
-        svm_kernel = kwargs.get('dropdown-svm-parameter-kernel', 'rbf')
-        svm_C_power = kwargs.get('slider-svm-parameter-C-power', 0)
-        svm_C_coef = kwargs.get('slider-svm-parameter-C-coef', 1)
-        svm_degree = kwargs.get('slider-svm-parameter-degree', 3)
-        svm_gamma = kwargs.get('slider-svm-parameter-gamma-power', -1)
-        svm_gamma_coef = kwargs.get('slider-svm-parameter-gamma-coef', 5)
-        model = SVC(kernel=svm_kernel, C=svm_C_coef * 10 ** svm_C_power, degree=svm_degree, gamma=svm_gamma_coef * 10 ** svm_gamma, probability=True)
-        return model
+        model = SVC(
+            kernel=svm_kernel,
+            C=svm_C_coef * 10 ** svm_C_power,
+            degree=svm_degree,
+            gamma=svm_gamma_coef * 10 ** svm_gamma_power,
+            probability=True
+        )
     elif classifier_name == 'dt':
-        model = DecisionTreeClassifier(max_depth=kwargs.get('max-depth-slider', 5),
-                                        min_samples_split=kwargs.get('min-samples-split-slider', 2),
-                                        min_samples_leaf=kwargs.get('min-samples-leaf-slider', 1))
-        return model
+        model = DecisionTreeClassifier(
+            max_depth=dt_max_depth,
+            min_samples_split=dt_min_samples_split,
+            min_samples_leaf=dt_min_samples_leaf
+        )
     elif classifier_name == 'rf':
-        model = RandomForestClassifier(n_estimators=kwargs.get('n-estimators-slider', 100),
-                                       max_depth=kwargs.get('max-depth-slider', 5),
-                                       min_samples_split=kwargs.get('min-samples-split-slider', 2),
-                                       min_samples_leaf=kwargs.get('min-samples-leaf-slider', 1))
-        return model
+        model = RandomForestClassifier(
+            n_estimators=n_estimators,
+            max_depth=rf_max_depth,
+            min_samples_split=rf_min_samples_split,
+            min_samples_leaf=rf_min_samples_leaf
+        )
     elif classifier_name == 'knn':
-        model = KNeighborsClassifier(n_neighbors=kwargs.get('n-neighbors-slider', 5),
-                                     weights=kwargs.get('weights-dropdown', 'uniform'),
-                                     algorithm=kwargs.get('algorithm-dropdown', 'auto'))
-        return model
+        model = KNeighborsClassifier(
+            n_neighbors=n_neighbors,
+            weights=weights,
+            algorithm=algorithm
+        )
+    else:
+        raise ValueError(f"Unknown classifier: {classifier_name}")
+    
+    model_params = model.get_params()  # Get model parameters
+    return model_params
     
 def create_prediction_plot(
     model, X_train, X_test, y_train, y_test, Z, xx, yy, mesh_step, threshold
@@ -349,13 +361,136 @@ def create_cm_fig(confusion_matrix, target_names):
     return fig_cm
 
 # Function to calculate ROC curve and AUC
-def calculate_roc(y_test, y_scores, target_names):
+def calculate_roc(y_true: np.ndarray, y_scores: np.ndarray, target_names: List[str]) -> Tuple[Dict[int, np.ndarray], Dict[int, np.ndarray], Dict[int, float]]:
     fpr, tpr, roc_auc = {}, {}, {}
-    for i in range(len(target_names)):
-        fpr[i], tpr[i], _ = roc_curve(y_test == i, y_scores[:, i])
+    for i, name in enumerate(target_names):
+        fpr[i], tpr[i], _ = roc_curve(y_true == i, y_scores[:, i])
         roc_auc[i] = auc(fpr[i], tpr[i])
     return fpr, tpr, roc_auc
 
+def roc_curve_fig(model, X_test: np.ndarray, y_test: np.ndarray, target_names: List[str]) -> go.Figure:
+    y_scores = model.predict_proba(X_test)
+    fpr, tpr, roc_auc = calculate_roc(y_test, y_scores, target_names)
+
+    # Plotly color sequence
+    colors = ['#636EFA', '#EF553B', '#00CC96', '#AB63FA', '#FFA15A', '#19D3F3', '#FF6692', '#B6E880', '#FF97FF', '#FECB52']
+
+    traces = []
+    for i, name in enumerate(target_names):
+        color = colors[i % len(colors)]  # Cycle through colors if more classes than colors
+        trace = go.Scatter(
+            x=fpr[i], 
+            y=tpr[i], 
+            mode="lines", 
+            name=f"{name} (AUC = {roc_auc[i]:.3f})",
+            line={"color": color}
+        )
+        traces.append(trace)
+
+    layout = go.Layout(
+        title="ROC Curve",
+        xaxis=dict(title="False Positive Rate", gridcolor="#2f3445"),
+        yaxis=dict(title="True Positive Rate", gridcolor="#2f3445"),
+        legend=dict(x=0, y=1.05, orientation="h"),
+        margin=dict(l=100, r=10, t=25, b=40),
+        plot_bgcolor="#282b38",
+        paper_bgcolor="#282b38",
+        font={"color": "#a5b1cd"},
+        showlegend=True
+    )
+
+    figure = go.Figure(data=traces, layout=layout)
+
+    # Add diagonal line
+    figure.add_shape(
+        type='line', 
+        line=dict(dash='dash', color='gray'),
+        x0=0, x1=1, y0=0, y1=1
+    )
+
+    return figure
+
+def create_prediction_plot(model, X_train, X_test, y_train, y_test, Z, xx, yy, x_axis_name, y_axis_name, target_names):
+    # Create the plot
+    fig = go.Figure()
+
+    # Add decision boundary
+    boundary = go.Contour(
+        x=xx[0],
+        y=yy[:, 0],
+        z=Z.reshape(xx.shape),
+        colorscale='RdBu',
+        opacity=0.6,
+        showscale=False,
+        contours=dict(
+            showlines=False,
+        ),
+        hoverinfo='none'
+    )
+    fig.add_trace(boundary)
+
+    # Add scatter plot for training data
+    for i, target in enumerate(np.unique(y_train)):
+        indices = y_train == target
+        scatter_train = go.Scatter(
+            x=X_train[indices, 0],
+            y=X_train[indices, 1],
+            mode='markers',
+            name=f'Train: {target_names[i]}',
+            marker=dict(
+                size=10,
+                symbol='circle',
+                color=f'rgba({50+i*50}, {100+i*50}, {150+i*50}, 0.8)',
+                line=dict(width=1, color='white')
+            )
+        )
+        fig.add_trace(scatter_train)
+
+    # Add scatter plot for test data
+    for i, target in enumerate(np.unique(y_test)):
+        indices = y_test == target
+        scatter_test = go.Scatter(
+            x=X_test[indices, 0],
+            y=X_test[indices, 1],
+            mode='markers',
+            name=f'Test: {target_names[i]}',
+            marker=dict(
+                size=10,
+                symbol='star',
+                color=f'rgba({50+i*50}, {100+i*50}, {150+i*50}, 0.8)',
+                line=dict(width=1, color='white')
+            )
+        )
+        fig.add_trace(scatter_test)
+
+    # Update layout
+    fig.update_layout(
+        title=dict(text=f'Decision Boundary and Data Points ({type(model).__name__})', x=0.5),
+        xaxis=dict(title=x_axis_name, gridcolor='#2f3445'),
+        yaxis=dict(title=y_axis_name, gridcolor='#2f3445'),
+        legend=dict(x=0, y=1.05, orientation='h'),
+        margin=dict(l=50, r=10, t=50, b=50),
+        plot_bgcolor='#282b38',
+        paper_bgcolor='#282b38',
+        font=dict(color='#a5b1cd'),
+        hoverlabel=dict(bgcolor='white', font_size=12),
+    )
+
+    # Add model performance information
+    train_accuracy = model.score(X_train, y_train)
+    test_accuracy = model.score(X_test, y_test)
+    fig.add_annotation(
+        xref='paper', yref='paper',
+        x=0.02, y=0.98,
+        text=f'Train Accuracy: {train_accuracy:.2f}<br>Test Accuracy: {test_accuracy:.2f}',
+        showarrow=False,
+        font=dict(color='white'),
+        bgcolor='rgba(0,0,0,0.5)',
+        bordercolor='white',
+        borderwidth=1
+    )
+
+    return fig
 # Layout of the Dash app
 app.layout = html.Div([
     html.Div(
@@ -426,13 +561,11 @@ app.layout = html.Div([
                 html.H3('选择分类器'),
                 dcc.Dropdown(
                     id='classifier-dropdown',
-                    options=[{'label': 'Logistic Regression', 'value': 'logreg'},
-                            {'label': 'Decision Tree', 'value': 'dt'},
+                    options=[{'label': 'Decision Tree', 'value': 'dt'},
                             {'label': 'Random Forest', 'value': 'rf'},
                             {'label': 'SVM', 'value': 'svm'},
-                            {'label': 'KNN', 'value': 'knn'},
-                            {'label': 'Gradient Boosting', 'value': 'gb'}],
-                    value='logreg'
+                            {'label': 'KNN', 'value': 'knn'}],
+                    value='knn'
                 ),
                 html.H3('选择绘图坐标参数'),
                 html.Div([
@@ -556,7 +689,7 @@ app.layout = html.Div([
                         ),
                         drc.NamedSlider(
                             name="Max Depth",
-                            id="max-depth-slider",
+                            id="dt-max-depth-slider",
                             min=1,
                             max=20,
                             value=5,
@@ -564,7 +697,7 @@ app.layout = html.Div([
                         ),
                         drc.NamedSlider(
                             name="Min Samples Split",
-                            id="min-samples-split-slider",
+                            id="dt-min-samples-split-slider",
                             min=2,
                             max=20,
                             value=2,
@@ -572,7 +705,7 @@ app.layout = html.Div([
                         ),
                         drc.NamedSlider(
                             name="Min Samples Leaf",
-                            id="min-samples-leaf-slider",
+                            id="dt-min-samples-leaf-slider",
                             min=1,
                             max=20,
                             value=1,
@@ -600,7 +733,7 @@ app.layout = html.Div([
                         ),
                         drc.NamedSlider(
                             name="Max Depth",
-                            id="max-depth-slider",
+                            id="rf-max-depth-slider",
                             min=1,
                             max=20,
                             value=5,
@@ -608,7 +741,7 @@ app.layout = html.Div([
                         ),
                         drc.NamedSlider(
                             name="Min Samples Split",
-                            id="min-samples-split-slider",
+                            id="rf-min-samples-split-slider",
                             min=2,
                             max=20,
                             value=2,
@@ -616,7 +749,7 @@ app.layout = html.Div([
                         ),
                         drc.NamedSlider(
                             name="Min Samples Leaf",
-                            id="min-samples-leaf-slider",
+                            id="rf-min-samples-leaf-slider",
                             min=1,
                             max=20,
                             value=1,
@@ -687,7 +820,7 @@ app.layout = html.Div([
             ])
         ])
     ], style={'width': '75%', 'display': 'inline-block', 'padding': '10px', 'vertical-align': 'top'}),
-    dcc.Store(id='classification-model'),
+    dcc.Store(id='classification-model-params'),
 ])
 
 @app.callback(
@@ -713,90 +846,6 @@ def update_axis_values(dataset_name, selected_features):
         return selected_features[0], selected_features[-1]
     return None, None
 
-# 添加参数选择器布局到布局
-@app.callback(
-    Output('param-selector-container', 'children'),
-    Input('classifier-dropdown', 'value')
-)
-def update_param_selector(classifier_name):
-    if classifier_name == 'logreg':
-        return html.Div([
-            html.Label('C (正则化强度)'),
-            dcc.Slider(id='C-slider', min=0.01, max=10, step=0.01, value=1, marks={i: str(i) for i in range(11)}),
-            html.Label('solver (优化算法)'),
-            dcc.Dropdown(id='solver-dropdown', options=[
-                {'label': 'lbfgs', 'value': 'lbfgs'},
-                {'label': 'liblinear', 'value': 'liblinear'},
-                {'label': 'sag', 'value': 'sag'},
-                {'label': 'saga', 'value': 'saga'}
-            ], value='lbfgs')
-        ])
-    elif classifier_name == 'dt':
-        return html.Div([
-            html.Label('max_depth (最大深度)'),
-            dcc.Slider(id='max-depth-slider', min=1, max=20, step=1, value=5, marks={i: str(i) for i in range(1, 21)}),
-            html.Label('min_samples_split (内部节点再划分所需最小样本数)'),
-            dcc.Slider(id='min-samples-split-slider', min=2, max=20, step=1, value=2, marks={i: str(i) for i in range(2, 21)}),
-            html.Label('min_samples_leaf (叶子节点最少样本数)'),
-            dcc.Slider(id='min-samples-leaf-slider', min=1, max=20, step=1, value=1, marks={i: str(i) for i in range(1, 21)})
-        ])
-    elif classifier_name == 'rf':
-        return html.Div([
-            html.Label('n_estimators (树的数量)'),
-            dcc.Slider(id='n-estimators-slider', min=10, max=200, step=10, value=100, marks={i: str(i) for i in range(10, 201, 10)}),
-            html.Label('max_depth (最大深度)'),
-            dcc.Slider(id='max-depth-slider', min=1, max=20, step=1, value=5, marks={i: str(i) for i in range(1, 21)}),
-            html.Label('min_samples_split (内部节点再划分所需最小样本数)'),
-            dcc.Slider(id='min-samples-split-slider', min=2, max=20, step=1, value=2, marks={i: str(i) for i in range(2, 21)}),
-            html.Label('min_samples_leaf (叶子节点最少样本数)'),
-            dcc.Slider(id='min-samples-leaf-slider', min=1, max=20, step=1, value=1, marks={i: str(i) for i in range(1, 21)})
-        ])
-    elif classifier_name == 'svm':
-        return html.Div([
-            html.Label('C (正则化强度)'),
-            dcc.Slider(id='C-slider', min=0.01, max=10, step=0.01, value=1, marks={i: str(i) for i in range(11)}),
-            html.Label('kernel (核函数)'),
-            dcc.Dropdown(id='kernel-dropdown', options=[
-                {'label': 'linear', 'value': 'linear'},
-                {'label': 'poly', 'value': 'poly'},
-                {'label': 'rbf', 'value': 'rbf'},
-                {'label': 'sigmoid', 'value': 'sigmoid'}
-            ], value='rbf'),
-            html.Label('gamma (核系数)'),
-            dcc.Slider(id='gamma-slider', min=0.001, max=1, step=0.001, value=0.1, marks={i/100: str(i/100) for i in range(1, 101, 10)})
-        ])
-    elif classifier_name == 'knn':
-        return html.Div([
-            html.Label('n_neighbors (邻居数)'),
-            dcc.Slider(id='n-neighbors-slider', min=1, max=20, step=1, value=5, marks={i: str(i) for i in range(1, 21)}),
-            html.Label('weights (权重函数)'),
-            dcc.Dropdown(id='weights-dropdown', options=[
-                {'label': 'uniform', 'value': 'uniform'},
-                {'label': 'distance', 'value': 'distance'}
-            ], value='uniform'),
-            html.Label('algorithm (算法)'),
-            dcc.Dropdown(id='algorithm-dropdown', options=[
-                {'label': 'auto', 'value': 'auto'},
-                {'label': 'ball_tree', 'value': 'ball_tree'},
-                {'label': 'kd_tree', 'value': 'kd_tree'},
-                {'label': 'brute', 'value': 'brute'}
-            ], value='auto')
-        ])
-    elif classifier_name == 'gb':
-        return html.Div([
-            html.Label('n_estimators (树的数量)'),
-            dcc.Slider(id='n-estimators-slider', min=10, max=200, step=10, value=100, marks={i: str(i) for i in range(10, 201, 10)}),
-            html.Label('learning_rate (学习率)'),
-            dcc.Slider(id='learning-rate-slider', min=0.01, max=1, step=0.01, value=0.1, marks={i: str(i/100) for i in range(0, 101, 10)}),
-            html.Label('max_depth (最大深度)'),
-            dcc.Slider(id='max-depth-slider', min=1, max=20, step=1, value=5, marks={i: str(i) for i in range(1, 21)}),
-            html.Label('min_samples_split (内部节点再划分所需最小样本数)'),
-            dcc.Slider(id='min-samples-split-slider', min=2, max=20, step=1, value=2, marks={i: str(i) for i in range(2, 21)}),
-            html.Label('min_samples_leaf (叶子节点最少样本数)'),
-            dcc.Slider(id='min-samples-leaf-slider', min=1, max=20, step=1, value=1, marks={i: str(i) for i in range(1, 21)})
-        ])
-    return html.Div([])
-
 @app.callback(
     Output('pairplot', 'figure'),
     [Input('dataset-dropdown', 'value'),
@@ -807,6 +856,63 @@ def update_pairplot(dataset_name, selected_features):
         X, y, _, target_names = load_data(dataset_name, selected_features)
         return create_pairplot(X, y, dataset_name, selected_features, target_names)
     return go.Figure()
+
+@app.callback(
+    [Output('prediction-confidence', 'figure'),
+     Output('roc-curve', 'figure'),
+     Output('confusion-matrix', 'figure')],
+    [Input('classifier-dropdown', 'value'),
+     Input('classification-model-params', 'data'),
+     Input('dataset-dropdown', 'value'),
+     Input('feature-checklist', 'value'),
+     Input('x-axis-dropdown', 'value'),
+     Input('y-axis-dropdown', 'value')
+    ]
+)
+def train_model_and_update_figure(model_name, model_params, dataset_name, selected_features,x_axis_name,y_axis_name):
+    X, y, _, target_names = load_data(dataset_name, selected_features)
+    # Split data into training and test sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    
+    # Train model
+    models = {
+        'svm': SVC,
+        'dt': DecisionTreeClassifier,
+        'rf': RandomForestClassifier,
+        'knn': KNeighborsClassifier
+    }
+    if model_name == 'svm':
+        model_params['probability'] = True
+    classifier = models[model_name](**model_params)
+    classifier.fit(X_train, y_train)
+    
+    # Create meshgrid for decision boundary, x_axis_name and y_axis_name are the selected features
+    index_x = selected_features.index(x_axis_name)
+    index_y = selected_features.index(y_axis_name)
+    x_min, x_max = X[:, index_x].min(), X[:, index_x].max()
+    y_min, y_max = X[:, index_y].min(), X[:, index_y].max()
+    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100), np.linspace(y_min, y_max, 100))
+    # 其他特征采用平均值来代替
+    pred_point_list = []
+    for i in range(len(selected_features)):
+        if i != index_x and i != index_y:
+            mean = np.mean(X[:, i])
+            pred_point_list.append(np.full(xx.ravel().shape, mean))
+        elif i == index_x:
+            pred_point_list.append(xx.ravel())
+        elif i == index_y:
+            pred_point_list.append(yy.ravel())
+    
+    Z = classifier.predict(np.c_[pred_point_list].T)
+    
+    predict_fig =  create_prediction_plot(classifier, X_train, X_test, y_train, y_test, Z, xx, yy, x_axis_name, y_axis_name, target_names)
+    
+    roc_fig = roc_curve_fig(classifier, X_test, y_test, target_names)
+    
+    cm_fig = create_cm_fig(confusion_matrix(y_test, classifier.predict(X_test)), target_names)
+    
+    return predict_fig, roc_fig, cm_fig
+    
 
 if __name__ == '__main__':
     app.run_server(debug=True)
