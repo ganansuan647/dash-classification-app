@@ -258,95 +258,12 @@ def create_classifier(classifier_name, svm_kernel, svm_C_power, svm_C_coef, svm_
     return model_params
     
 def create_prediction_plot(
-    model, X_train, X_test, y_train, y_test, Z, xx, yy, mesh_step, threshold
+    model, X_train, X_test, y_train, y_test, Z, xx, yy, x_axis_name, y_axis_name, target_names
 ):
-    # Get train and test score from model
-    y_pred_train = (model.decision_function(X_train) > threshold).astype(int)
-    y_pred_test = (model.decision_function(X_test) > threshold).astype(int)
-    train_score = accuracy_score(y_true=y_train, y_pred=y_pred_train)
-    test_score = accuracy_score(y_true=y_test, y_pred=y_pred_test)
-
-    # Compute threshold
-    scaled_threshold = threshold * (Z.max() - Z.min()) + Z.min()
-    range = max(abs(scaled_threshold - Z.min()), abs(scaled_threshold - Z.max()))
-
-    # Colorscale
-    bright_cscale = [[0, "#ff3700"], [1, "#0b8bff"]]
-    cscale = [
-        [0.0000000, "#ff744c"],
-        [0.1428571, "#ff916d"],
-        [0.2857143, "#ffc0a8"],
-        [0.4285714, "#ffe7dc"],
-        [0.5714286, "#e5fcff"],
-        [0.7142857, "#c8feff"],
-        [0.8571429, "#9af8ff"],
-        [1.0000000, "#20e6ff"],
-    ]
-
     # Create the plot
-    # Plot the prediction contour of the SVM
-    trace0 = go.Contour(
-        x=np.arange(xx.min(), xx.max(), mesh_step),
-        y=np.arange(yy.min(), yy.max(), mesh_step),
-        z=Z.reshape(xx.shape),
-        zmin=scaled_threshold - range,
-        zmax=scaled_threshold + range,
-        hoverinfo="none",
-        showscale=False,
-        contours=dict(showlines=False),
-        colorscale=cscale,
-        opacity=0.9,
-    )
-
-    # Plot the threshold
-    trace1 = go.Contour(
-        x=np.arange(xx.min(), xx.max(), mesh_step),
-        y=np.arange(yy.min(), yy.max(), mesh_step),
-        z=Z.reshape(xx.shape),
-        showscale=False,
-        hoverinfo="none",
-        contours=dict(
-            showlines=False, type="constraint", operation="=", value=scaled_threshold
-        ),
-        name=f"Threshold ({scaled_threshold:.3f})",
-        line=dict(color="#708090"),
-    )
-
-    # Plot Training Data
-    trace2 = go.Scatter(
-        x=X_train[:, 0],
-        y=X_train[:, 1],
-        mode="markers",
-        name=f"Training Data (accuracy={train_score:.3f})",
-        marker=dict(size=10, color=y_train, colorscale=bright_cscale),
-    )
-
-    # Plot Test Data
-    trace3 = go.Scatter(
-        x=X_test[:, 0],
-        y=X_test[:, 1],
-        mode="markers",
-        name=f"Test Data (accuracy={test_score:.3f})",
-        marker=dict(
-            size=10, symbol="triangle-up", color=y_test, colorscale=bright_cscale
-        ),
-    )
-
-    layout = go.Layout(
-        xaxis=dict(ticks="", showticklabels=False, showgrid=False, zeroline=False),
-        yaxis=dict(ticks="", showticklabels=False, showgrid=False, zeroline=False),
-        hovermode="closest",
-        legend=dict(x=0, y=-0.01, orientation="h"),
-        margin=dict(l=0, r=0, t=0, b=0),
-        plot_bgcolor="#282b38",
-        paper_bgcolor="#282b38",
-        font={"color": "#a5b1cd"},
-    )
-
-    data = [trace0, trace1, trace2, trace3]
-    figure = go.Figure(data=data, layout=layout)
-
-    return figure
+    fig = go.Figure()
+    
+    return prediction_fig
 
 def create_cm_fig(confusion_matrix, target_names):
     fig_cm = px.imshow(confusion_matrix, labels=dict(x="Predicted", y="Actual"), x=target_names, y=target_names, title="Confusion Matrix")
@@ -889,23 +806,97 @@ def train_model_and_update_figure(model_name, model_params, dataset_name, select
     # Create meshgrid for decision boundary, x_axis_name and y_axis_name are the selected features
     index_x = selected_features.index(x_axis_name)
     index_y = selected_features.index(y_axis_name)
-    x_min, x_max = X[:, index_x].min(), X[:, index_x].max()
-    y_min, y_max = X[:, index_y].min(), X[:, index_y].max()
+    x_min, x_max = X[:, index_x].min() - 1, X[:, index_x].max() + 1
+    y_min, y_max = X[:, index_y].min() - 1, X[:, index_y].max() + 1
     xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100), np.linspace(y_min, y_max, 100))
-    # 其他特征采用平均值来代替
-    pred_point_list = []
-    for i in range(len(selected_features)):
-        if i != index_x and i != index_y:
-            mean = np.mean(X[:, i])
-            pred_point_list.append(np.full(xx.ravel().shape, mean))
-        elif i == index_x:
-            pred_point_list.append(xx.ravel())
-        elif i == index_y:
-            pred_point_list.append(yy.ravel())
     
+    pred_point_list = [np.full(xx.ravel().shape, np.mean(X[:, i])) if i not in [index_x, index_y] 
+                       else xx.ravel() if i == index_x else yy.ravel() 
+                       for i in range(len(selected_features))]
+   
     Z = classifier.predict(np.c_[pred_point_list].T)
+    Z = Z.reshape(xx.shape)
+    proba = classifier.predict_proba(np.c_[pred_point_list].T)
+    proba = proba.reshape(xx.shape + (len(target_names),))
+   
+    diff = proba.max(axis=-1) - (proba.sum(axis=-1) - proba.max(axis=-1))
+   
+    symbol_list = ['circle', 'star', 'diamond', 'cross', 'x']
+    symbol_map = {target: symbol for target, symbol in zip(target_names, symbol_list)}
+    color_map = {target: px.colors.qualitative.Set1[i] for i, target in enumerate(target_names)}
+   
+    # 创建预测图
+    predict_fig = go.Figure()
+
+    # 添加决策边界热力图
+    predict_fig.add_trace(
+        go.Heatmap(
+            x=xx[0],
+            y=yy[:, 0],
+            z=proba.max(axis=-1),
+            customdata=proba,
+            colorscale='RdBu',
+            opacity=0.4,
+            showscale=True,
+            hovertemplate=(
+                f'{x_axis_name}: %{{x:.2f}} <br>'
+                f'{y_axis_name}: %{{y:.2f}} <br>'
+                f'{target_names[0]}:' + '%{customdata[0]:.2f}<br>'
+                f'{target_names[1]}:' + '%{customdata[1]:.2f}<br>'
+                f'{target_names[2]}:' + '%{customdata[2]:.2f}<br>'
+            )
+        )
+    )
+
+    # 添加训练数据和测试数据散点图
+    markers = ['circle', 'square', 'diamond', 'cross', 'x']
+    for i, target in enumerate(target_names):
+        train_mask = y_train == i
+        test_mask = y_test == i
+        
+        predict_fig.add_trace(
+            go.Scatter(
+                x=X_train[train_mask, index_x],
+                y=X_train[train_mask, index_y],
+                mode='markers',
+                marker=dict(size=10, symbol=markers[i], line=dict(width=2, color='DarkSlateGrey')),
+                name=f'{target} (训练)',
+                legendgroup='train',
+                showlegend=True,
+                marker_color='rgba(255, 255, 255, 0)',
+                marker_line_color='rgb(0, 0, 0)',
+                marker_line_width=2
+            )
+        )
+        
+        predict_fig.add_trace(
+            go.Scatter(
+                x=X_test[test_mask, index_x],
+                y=X_test[test_mask, index_y],
+                mode='markers',
+                marker=dict(size=10, symbol=markers[i], line=dict(width=2, color='DarkSlateGrey')),
+                name=f'{target} (测试)',
+                legendgroup='test',
+                showlegend=True,
+            )
+        )
+
+    predict_fig.update_layout(
+        title='预测置信度和决策边界',
+        xaxis_title=x_axis_name,
+        yaxis_title=y_axis_name,
+        legend_title='类别',
+        hovermode='closest',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="left",
+            x=0.0
+        )
+    )
     
-    predict_fig =  create_prediction_plot(classifier, X_train, X_test, y_train, y_test, Z, xx, yy, x_axis_name, y_axis_name, target_names)
+    # predict_fig =  create_prediction_plot(classifier, X_train, X_test, y_train, y_test, Z, xx, yy, x_axis_name, y_axis_name, target_names)
     
     roc_fig = roc_curve_fig(classifier, X_test, y_test, target_names)
     
