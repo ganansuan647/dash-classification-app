@@ -1,5 +1,6 @@
 import dash
-from dash import dcc, html, callback
+from dash import dcc, html
+from plotly.colors import make_colorscale
 from dash.dependencies import Input, Output, State
 from dash import callback_context
 from dash.exceptions import PreventUpdate
@@ -177,8 +178,8 @@ def create_pairplot(X, y, dataset_name, selected_features, target_names):
     
     # Update figure layout
     fig_pairplot.update_layout(
-        autosize=True,
         height=1100,
+        autosize=True,
         showlegend=True,
         dragmode='select',
     )
@@ -200,8 +201,10 @@ def preprocess_bridge_data(data):
 
 # Function to create classifier
 @app.callback(
-    Output('classification-model-params', 'data'),
-    Input('classifier-dropdown', 'value'),
+    [Output('classification-model-params', 'data'),
+    Output('current-model-params', 'data')],
+    State('classifier-dropdown', 'value'),
+    Input('current-model-params', 'data'),
     Input('dropdown-svm-parameter-kernel', 'value'),
     Input('slider-svm-parameter-C-power', 'value'),
     Input('slider-svm-parameter-C-coef', 'value'),
@@ -219,7 +222,7 @@ def preprocess_bridge_data(data):
     Input('weights-dropdown', 'value'),
     Input('algorithm-dropdown', 'value'),
 )
-def create_classifier(classifier_name, svm_kernel, svm_C_power, svm_C_coef, svm_degree, 
+def create_classifier(classifier_name, current_params, svm_kernel, svm_C_power, svm_C_coef, svm_degree, 
                       svm_gamma_power, svm_gamma_coef, dt_max_depth, rf_max_depth, 
                       dt_min_samples_split, rf_min_samples_split, dt_min_samples_leaf, 
                       rf_min_samples_leaf, n_estimators, n_neighbors, weights, algorithm):
@@ -229,14 +232,16 @@ def create_classifier(classifier_name, svm_kernel, svm_C_power, svm_C_coef, svm_
             C=svm_C_coef * 10 ** svm_C_power,
             degree=svm_degree,
             gamma=svm_gamma_coef * 10 ** svm_gamma_power,
-            probability=True
+            probability=True,
         )
+        model_params = model.get_params()  # Get model parameters
     elif classifier_name == 'dt':
         model = DecisionTreeClassifier(
             max_depth=dt_max_depth,
             min_samples_split=dt_min_samples_split,
             min_samples_leaf=dt_min_samples_leaf
         )
+        model_params = model.get_params()  # Get model parameters
     elif classifier_name == 'rf':
         model = RandomForestClassifier(
             n_estimators=n_estimators,
@@ -244,17 +249,23 @@ def create_classifier(classifier_name, svm_kernel, svm_C_power, svm_C_coef, svm_
             min_samples_split=rf_min_samples_split,
             min_samples_leaf=rf_min_samples_leaf
         )
+        model_params = model.get_params()  # Get model parameters
     elif classifier_name == 'knn':
         model = KNeighborsClassifier(
             n_neighbors=n_neighbors,
             weights=weights,
             algorithm=algorithm
         )
+        model_params = model.get_params()  # Get model parameters
     else:
         raise ValueError(f"Unknown classifier: {classifier_name}")
     
-    model_params = model.get_params()  # Get model parameters
-    return model_params
+    model_params['name'] = classifier_name
+    if current_params == model_params:
+        raise PreventUpdate
+    else:
+        return model_params, model_params
+    
     
 def create_prediction_plot(classifier, X, y, X_train, X_test, y_train, y_test, x_axis_name, y_axis_name, selected_features, target_names):
     # Create meshgrid for decision boundary, x_axis_name and y_axis_name are the selected features
@@ -284,35 +295,73 @@ def create_prediction_plot(classifier, X, y, X_train, X_test, y_train, y_test, x
     max_proba_value = np.max(proba, axis=-1)
     max_proba_class_names = np.array([target_names[idx] for idx in max_proba_class.flatten()]).reshape(max_proba_class.shape)
 
-    # Create color scale for each class
+    # # Create color scale for each class
+    # colors = px.colors.qualitative.Set1[:len(target_names)]
+    # color_scale = []
+    # for i, color in enumerate(colors):
+    #     color_scale.extend([(i/len(target_names), color), ((i+1)/len(target_names), color)])
+    
+    # # 创建预测图
+    # predict_fig = go.Figure()
+
+    # # 添加概率热图
+    # predict_fig.add_trace(
+    #     go.Contour(
+    #         x=xx[0],
+    #         y=yy[:, 0],
+    #         z=max_proba_class,
+    #         customdata= np.dstack((proba, max_proba_value, max_proba_class_names)),
+    #         colorscale=color_scale,
+    #         opacity=0.7,
+    #         showscale=False,
+    #         hovertemplate=(
+    #             f'{x_axis_name}: %{{x:.2f}} <br>'
+    #             f'{y_axis_name}: %{{y:.2f}} <br>'
+    #             f'{target_names[0]}:' + '%{customdata[0]:.2f}<br>'
+    #             f'{target_names[1]}:' + '%{customdata[1]:.2f}<br>'
+    #             f'{target_names[2]}:' + '%{customdata[2]:.2f}<br>'
+    #             '最可能类别: %{customdata[4]}<br>'
+    #         )
+    #     )
+    # )
+    
+    # 为每个类别分配基础颜色
     colors = px.colors.qualitative.Set1[:len(target_names)]
-    color_scale = []
-    for i, color in enumerate(colors):
-        color_scale.extend([(i/len(target_names), color), ((i+1)/len(target_names), color)])
     
     # 创建预测图
     predict_fig = go.Figure()
 
-    # 添加概率热图
-    predict_fig.add_trace(
-        go.Heatmap(
-            x=xx[0],
-            y=yy[:, 0],
-            z=max_proba_class,
-            customdata= np.dstack((proba, max_proba_value, max_proba_class_names)),
-            colorscale=color_scale,
-            opacity=0.7,
-            showscale=False,
-            hovertemplate=(
-                f'{x_axis_name}: %{{x:.2f}} <br>'
-                f'{y_axis_name}: %{{y:.2f}} <br>'
-                f'{target_names[0]}:' + '%{customdata[0]:.2f}<br>'
-                f'{target_names[1]}:' + '%{customdata[1]:.2f}<br>'
-                f'{target_names[2]}:' + '%{customdata[2]:.2f}<br>'
-                '最可能类别: %{customdata[4]}<br>'
+    customdata = np.dstack((proba, max_proba_class_names))
+
+    # 为每个类别绘制独立的等高线
+    for i, target_name in enumerate(target_names):
+        z_class = np.where(max_proba_class == i, max_proba_value, np.nan)
+        
+        # 使用布尔索引直接筛选数据
+        mask = max_proba_class == i
+        x_class = xx[mask]
+        y_class = yy[mask]
+        z_class_filtered = z_class[mask]
+        customdata_filtered = customdata[mask]
+
+        # 添加等高线图
+        predict_fig.add_trace(
+            go.Contour(
+                x=x_class,
+                y=y_class,
+                z=z_class_filtered,
+                customdata=customdata_filtered,
+                colorscale=[[0, colors[i]], [1, colors[i]]],
+                opacity=0.7,
+                showscale=False,
+                hovertemplate=(
+                    f'{x_axis_name}: %{{x:.2f}} <br>'
+                    f'{y_axis_name}: %{{y:.2f}} <br>'
+                    + '<br>'.join([f'{name}: %{{customdata[{j}]:.2f}}' for j, name in enumerate(target_names)])
+                    + '<br>最可能类别: %{customdata[' + str(len(target_names) + 1) + ']}<br>'
+                )
             )
         )
-    )
 
     # 添加训练数据和测试数据散点图
     markers = ['circle', 'square', 'diamond', 'cross', 'x']
@@ -510,11 +559,11 @@ app.layout = html.Div([
                 html.H3('选择分类器'),
                 dcc.Dropdown(
                     id='classifier-dropdown',
-                    options=[{'label': 'Decision Tree', 'value': 'dt'},
-                            {'label': 'Random Forest', 'value': 'rf'},
-                            {'label': 'SVM', 'value': 'svm'},
-                            {'label': 'KNN', 'value': 'knn'}],
-                    value='knn'
+                    options=[{'label': '支持向量机(SVM)', 'value': 'svm'},
+                             {'label': '决策树(Decision Tree)', 'value': 'dt'},
+                            {'label': '随机森林(Random Forest)', 'value': 'rf'},
+                            {'label': 'K-近邻(K-Nearest Neighbors)', 'value': 'knn'}],
+                    value='svm'
                 ),
                 html.H3('选择绘图坐标参数'),
                 html.Div([
@@ -544,19 +593,7 @@ app.layout = html.Div([
                                 "border-bottom": "1px solid #000",
                                 "margin-bottom": "5px"},
                         ),
-                        # SVM 参数选择器
-                        drc.NamedSlider(
-                            name="Threshold",
-                            id="slider-threshold",
-                            min=0,
-                            max=1,
-                            value=0.5,
-                            step=0.01,
-                        ),
-                        html.Button(
-                            "Reset Threshold",
-                            id="button-zero-threshold",
-                        ),
+                        # SVM 参数选择
                         drc.NamedDropdown(
                             name="Kernel",
                             id="dropdown-svm-parameter-kernel",
@@ -643,6 +680,7 @@ app.layout = html.Div([
                             max=20,
                             value=5,
                             marks={i: str(i) for i in range(1, 21)},
+                            step = 1,
                         ),
                         drc.NamedSlider(
                             name="Min Samples Split",
@@ -651,6 +689,7 @@ app.layout = html.Div([
                             max=20,
                             value=2,
                             marks={i: str(i) for i in range(2, 21)},
+                            step = 1,
                         ),
                         drc.NamedSlider(
                             name="Min Samples Leaf",
@@ -659,6 +698,7 @@ app.layout = html.Div([
                             max=20,
                             value=1,
                             marks={i: str(i) for i in range(1, 21)},
+                            step = 1,
                         ),
                     ],
                 ),
@@ -679,6 +719,7 @@ app.layout = html.Div([
                             max=200,
                             value=100,
                             marks={i: str(i) for i in range(10, 201, 10)},
+                            step=10,
                         ),
                         drc.NamedSlider(
                             name="Max Depth",
@@ -687,6 +728,7 @@ app.layout = html.Div([
                             max=20,
                             value=5,
                             marks={i: str(i) for i in range(1, 21)},
+                            step = 1,
                         ),
                         drc.NamedSlider(
                             name="Min Samples Split",
@@ -695,6 +737,7 @@ app.layout = html.Div([
                             max=20,
                             value=2,
                             marks={i: str(i) for i in range(2, 21)},
+                            step=1,
                         ),
                         drc.NamedSlider(
                             name="Min Samples Leaf",
@@ -703,6 +746,7 @@ app.layout = html.Div([
                             max=20,
                             value=1,
                             marks={i: str(i) for i in range(1, 21)},
+                            step=1,
                         ),
                     ],
                 ),
@@ -723,6 +767,7 @@ app.layout = html.Div([
                             max=20,
                             value=5,
                             marks={i: str(i) for i in range(1, 21)},
+                            step=1,
                         ),
                         drc.NamedDropdown(
                             name="Weights",
@@ -759,7 +804,7 @@ app.layout = html.Div([
             dcc.Tab(label='数据集分布图', children=[dcc.Graph(id='pairplot', style={'width': '100%'})]),
             dcc.Tab(label='分类器效果图', children=[
                 html.H3('分类置信图', style={'textAlign': 'center'}),
-                dcc.Graph(id='prediction-confidence', style={'height': '50vh'}),
+                dcc.Graph(id='prediction-plot', style={'height': '50vh'}),
                 html.Div([
                     html.Div([html.H4('ROC 曲线', style={'textAlign': 'center'}), dcc.Graph(id='roc-curve', style={'height': '45vh'})],
                              style={'width': '48%', 'display': 'inline-block'}),
@@ -770,6 +815,7 @@ app.layout = html.Div([
         ])
     ], style={'width': '75%', 'display': 'inline-block', 'padding': '10px', 'vertical-align': 'top'}),
     dcc.Store(id='classification-model-params'),
+    dcc.Store(id='current-model-params'),
 ])
 
 @app.callback(
@@ -808,7 +854,7 @@ def update_pairplot(dataset_name, selected_features):
 
 
 @app.callback(
-    [Output('prediction-confidence', 'figure'),
+    [Output('prediction-plot', 'figure'),
      Output('roc-curve', 'figure'),
      Output('confusion-matrix', 'figure')],
     [Input('classifier-dropdown', 'value'),
@@ -833,6 +879,8 @@ def train_model_and_update_figure(model_name, model_params, dataset_name, select
     }
     if model_name == 'svm':
         model_params['probability'] = True
+        
+    model_params.pop('name', None)
     classifier = models[model_name](**model_params)
     classifier.fit(X_train, y_train)
     
