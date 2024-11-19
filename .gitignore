@@ -2,4 +2,4 @@
 /.vscode/
 /.pytest_cache/
 *.ipynb
-/utils/
+*.pyc

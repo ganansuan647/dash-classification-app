@@ -21,6 +21,8 @@ import numpy as np
 from sklearn.manifold import TSNE
 import umap
 
+import utils.dash_reusable_components as drc
+
 # Create Dash app
 app = dash.Dash(
     __name__,
@@ -199,16 +201,50 @@ def preprocess_bridge_data(data):
     return data
 
 # Function to create classifier
-def create_classifier(classifier_name, C_value):
-    classifiers = {
-        'logreg': LogisticRegression(C=C_value),
-        'dt': DecisionTreeClassifier(),
-        'rf': RandomForestClassifier(),
-        'svm': SVC(probability=True),
-        'knn': KNeighborsClassifier(),
-        'gb': GradientBoostingClassifier()
-    }
-    return classifiers.get(classifier_name, LogisticRegression(C=C_value))
+@callback(
+    Output('classification-model', 'data'),
+    Input('classifier-dropdown', 'value'),
+    Input('dropdown-svm-parameter-kernel', 'value'),
+    Input('slider-svm-parameter-C-power', 'value'),
+    Input('slider-svm-parameter-C-coef', 'value'),
+    Input('slider-svm-parameter-degree', 'value'),
+    Input('slider-svm-parameter-gamma-power', 'value'),
+    Input('slider-svm-parameter-gamma-coef', 'value'),
+    Input('max-depth-slider', 'value'),
+    Input('min-samples-split-slider', 'value'),
+    Input('min-samples-leaf-slider', 'value'),
+    Input('n-estimators-slider', 'value'),
+    Input('n-neighbors-slider', 'value'),
+    Input('weights-dropdown', 'value'),
+    Input('algorithm-dropdown', 'value'),
+)
+def create_classifier(classifier_name, **kwargs):
+    if classifier_name == 'svm':
+        svm_kernel = kwargs.get('dropdown-svm-parameter-kernel', 'rbf')
+        svm_C_power = kwargs.get('slider-svm-parameter-C-power', 0)
+        svm_C_coef = kwargs.get('slider-svm-parameter-C-coef', 1)
+        svm_degree = kwargs.get('slider-svm-parameter-degree', 3)
+        svm_gamma = kwargs.get('slider-svm-parameter-gamma-power', -1)
+        svm_gamma_coef = kwargs.get('slider-svm-parameter-gamma-coef', 5)
+        model = SVC(kernel=svm_kernel, C=svm_C_coef * 10 ** svm_C_power, degree=svm_degree, gamma=svm_gamma_coef * 10 ** svm_gamma, probability=True)
+        return model
+    elif classifier_name == 'dt':
+        model = DecisionTreeClassifier(max_depth=kwargs.get('max-depth-slider', 5),
+                                        min_samples_split=kwargs.get('min-samples-split-slider', 2),
+                                        min_samples_leaf=kwargs.get('min-samples-leaf-slider', 1))
+        return model
+    elif classifier_name == 'rf':
+        model = RandomForestClassifier(n_estimators=kwargs.get('n-estimators-slider', 100),
+                                       max_depth=kwargs.get('max-depth-slider', 5),
+                                       min_samples_split=kwargs.get('min-samples-split-slider', 2),
+                                       min_samples_leaf=kwargs.get('min-samples-leaf-slider', 1))
+        return model
+    elif classifier_name == 'knn':
+        model = KNeighborsClassifier(n_neighbors=kwargs.get('n-neighbors-slider', 5),
+                                     weights=kwargs.get('weights-dropdown', 'uniform'),
+                                     algorithm=kwargs.get('algorithm-dropdown', 'auto'))
+        return model
+    
 
 def create_prediction_plot(
     model, X_train, X_test, y_train, y_test, Z, xx, yy, mesh_step, threshold
@@ -335,8 +371,8 @@ app.layout = html.Div([
                             id="banner-title",
                             children=[
                                 html.A(
-                                    "Support Vector Machine (SVM) Explorer",
-                                    href="https://github.com/plotly/dash-svm",
+                                    "Classification Explorer",
+                                    href="https://github.com/ganansuan647/dash-classification-app",
                                     style={
                                         "text-decoration": "none",
                                         "color": "inherit",
@@ -362,7 +398,20 @@ app.layout = html.Div([
     # 左列
     html.Div([
         dcc.Tabs([
-            dcc.Tab(label='说明', children=[html.H3('说明'), html.P('这是一个用于展示不同参数对分类器性能影响的 Dash 应用程序。')]),
+            dcc.Tab(label='说明', children=[
+                html.H3('说明'), html.P('这是一个用于展示不同参数对不同分类器性能影响的 Dash 应用程序。'),
+                # 添加作者信息
+                html.Div(
+                    className="author-info",
+                    children=[
+                        html.P("脚本作者: 苟凌云"),
+                        html.P("时间: 2024年11月"),
+                        html.P("邮箱: 2410100@tongji.edu.cn"),
+                        html.P("组员: 苟凌云、易航、齐新宇、何帅君、李鸿豪"),
+                    ],
+                    style={"text-align": "center", "margin-top": "20px"}
+                ),
+                ]),
             dcc.Tab(label='数据集', children=[
                 html.H3('选择数据集'),
                 dcc.Dropdown(
@@ -404,7 +453,222 @@ app.layout = html.Div([
                     )
                 ]),
                 html.H3('调整分类器参数'),
-                html.Div(id='param-selector-container'),
+                html.Details(
+                    id="svm-parameter-control-div",
+                    open=False,
+                    children=[
+                        html.Summary(
+                            "SVM 模型参数",
+                            style={"font-size": "24px",
+                                "border-bottom": "1px solid #000",
+                                "margin-bottom": "5px"},
+                        ),
+                        # SVM 参数选择器
+                        drc.NamedSlider(
+                            name="Threshold",
+                            id="slider-threshold",
+                            min=0,
+                            max=1,
+                            value=0.5,
+                            step=0.01,
+                        ),
+                        html.Button(
+                            "Reset Threshold",
+                            id="button-zero-threshold",
+                        ),
+                        drc.NamedDropdown(
+                            name="Kernel",
+                            id="dropdown-svm-parameter-kernel",
+                            options=[
+                                {
+                                    "label": "Radial basis function (RBF)",
+                                    "value": "rbf",
+                                },
+                                {"label": "Linear", "value": "linear"},
+                                {
+                                    "label": "Polynomial",
+                                    "value": "poly",
+                                },
+                                {
+                                    "label": "Sigmoid",
+                                    "value": "sigmoid",
+                                },
+                            ],
+                            value="rbf",
+                            clearable=False,
+                            searchable=False,
+                        ),
+                        drc.NamedSlider(
+                            name="Cost (C)",
+                            id="slider-svm-parameter-C-power",
+                            min=-2,
+                            max=4,
+                            value=0,
+                            marks={
+                                i: "{}".format(10 ** i)
+                                for i in range(-2, 5)
+                            },
+                        ),
+                        drc.FormattedSlider(
+                            id="slider-svm-parameter-C-coef",
+                            min=1,
+                            max=9,
+                            value=1,
+                        ),
+                        drc.NamedSlider(
+                            name="Degree",
+                            id="slider-svm-parameter-degree",
+                            min=2,
+                            max=10,
+                            value=3,
+                            step=1,
+                            marks={
+                                str(i): str(i) for i in range(2, 11, 2)
+                            },
+                        ),
+                        drc.NamedSlider(
+                            name="Gamma",
+                            id="slider-svm-parameter-gamma-power",
+                            min=-5,
+                            max=0,
+                            value=-1,
+                            marks={
+                                i: "{}".format(10 ** i)
+                                for i in range(-5, 1)
+                            },
+                        ),
+                        drc.FormattedSlider(
+                            id="slider-svm-parameter-gamma-coef",
+                            min=1,
+                            max=9,
+                            value=5,
+                        ),
+                    ],
+                ),
+                html.Details(
+                    id="dt-parameter-control-div",
+                    open=False,
+                    children=[
+                        html.Summary(
+                            "Decision Tree 模型参数",
+                            style={"font-size": "24px",
+                                "border-bottom": "1px solid #000",
+                                "margin-bottom": "5px"},
+                        ),
+                        drc.NamedSlider(
+                            name="Max Depth",
+                            id="max-depth-slider",
+                            min=1,
+                            max=20,
+                            value=5,
+                            marks={i: str(i) for i in range(1, 21)},
+                        ),
+                        drc.NamedSlider(
+                            name="Min Samples Split",
+                            id="min-samples-split-slider",
+                            min=2,
+                            max=20,
+                            value=2,
+                            marks={i: str(i) for i in range(2, 21)},
+                        ),
+                        drc.NamedSlider(
+                            name="Min Samples Leaf",
+                            id="min-samples-leaf-slider",
+                            min=1,
+                            max=20,
+                            value=1,
+                            marks={i: str(i) for i in range(1, 21)},
+                        ),
+                    ],
+                ),
+                html.Details(
+                    id="rf-parameter-control-div",
+                    open=False,
+                    children=[
+                        html.Summary(
+                            "Random Forest 模型参数",
+                            style={"font-size": "24px",
+                                "border-bottom": "1px solid #000",
+                                "margin-bottom": "5px"},
+                        ),
+                        drc.NamedSlider(
+                            name="Number of Estimators",
+                            id="n-estimators-slider",
+                            min=10,
+                            max=200,
+                            value=100,
+                            marks={i: str(i) for i in range(10, 201, 10)},
+                        ),
+                        drc.NamedSlider(
+                            name="Max Depth",
+                            id="max-depth-slider",
+                            min=1,
+                            max=20,
+                            value=5,
+                            marks={i: str(i) for i in range(1, 21)},
+                        ),
+                        drc.NamedSlider(
+                            name="Min Samples Split",
+                            id="min-samples-split-slider",
+                            min=2,
+                            max=20,
+                            value=2,
+                            marks={i: str(i) for i in range(2, 21)},
+                        ),
+                        drc.NamedSlider(
+                            name="Min Samples Leaf",
+                            id="min-samples-leaf-slider",
+                            min=1,
+                            max=20,
+                            value=1,
+                            marks={i: str(i) for i in range(1, 21)},
+                        ),
+                    ],
+                ),
+                html.Details(
+                    id="knn-parameter-control-div",
+                    open=False,
+                    children=[
+                        html.Summary(
+                            "K-Nearest Neighbors 模型参数",
+                            style={"font-size": "24px",
+                                "border-bottom": "1px solid #000",
+                                "margin-bottom": "5px"},
+                        ),
+                        drc.NamedSlider(
+                            name="Number of Neighbors",
+                            id="n-neighbors-slider",
+                            min=1,
+                            max=20,
+                            value=5,
+                            marks={i: str(i) for i in range(1, 21)},
+                        ),
+                        drc.NamedDropdown(
+                            name="Weights",
+                            id="weights-dropdown",
+                            options=[
+                                {"label": "Uniform", "value": "uniform"},
+                                {"label": "Distance", "value": "distance"},
+                            ],
+                            value="uniform",
+                            clearable=False,
+                            searchable=False,
+                        ),
+                        drc.NamedDropdown(
+                            name="Algorithm",
+                            id="algorithm-dropdown",
+                            options=[
+                                {"label": "Auto", "value": "auto"},
+                                {"label": "Ball Tree", "value": "ball_tree"},
+                                {"label": "KD Tree", "value": "kd_tree"},
+                                {"label": "Brute", "value": "brute"},
+                            ],
+                            value="auto",
+                            clearable=False,
+                            searchable=False,
+                        ),
+                    ],
+                ),
             ]),
         ], style={'width': '100%', 'padding': '10px', 'vertical-align': 'top'}),
     ], style={'width': '20%', 'display': 'inline-block', 'vertical-align': 'top', 'height': '100vh'}),
@@ -412,8 +676,9 @@ app.layout = html.Div([
     html.Div([
         dcc.Tabs([
             dcc.Tab(label='数据集分布图', children=[dcc.Graph(id='pairplot', style={'width': '100%'})]),
-            dcc.Tab(label='分类边界图', children=[
-                dcc.Graph(id='decision-boundary', style={'height': '50vh'}),
+            dcc.Tab(label='分类器效果图', children=[
+                html.H3('分类置信图', style={'textAlign': 'center'}),
+                dcc.Graph(id='prediction-confidence', style={'height': '50vh'}),
                 html.Div([
                     html.Div([html.H4('ROC 曲线', style={'textAlign': 'center'}), dcc.Graph(id='roc-curve', style={'height': '45vh'})],
                              style={'width': '48%', 'display': 'inline-block'}),
@@ -422,7 +687,8 @@ app.layout = html.Div([
                 ], style={'marginTop': '20px'})
             ])
         ])
-    ], style={'width': '75%', 'display': 'inline-block', 'padding': '10px', 'vertical-align': 'top'})
+    ], style={'width': '75%', 'display': 'inline-block', 'padding': '10px', 'vertical-align': 'top'}),
+    dcc.Store(id='classification-model'),
 ])
 
 @app.callback(
