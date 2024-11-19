@@ -1,23 +1,22 @@
 import dash
 from dash import dcc, html
-from plotly.colors import make_colorscale
 from dash.dependencies import Input, Output, State
 from dash import callback_context
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import plotly.express as px
+from plotly import colors
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn import datasets
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import SVC
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import roc_curve, auc, confusion_matrix, accuracy_score
+from sklearn.metrics import roc_curve, auc, confusion_matrix
 import numpy as np
 from typing import List, Dict, Tuple
 
@@ -295,73 +294,41 @@ def create_prediction_plot(classifier, X, y, X_train, X_test, y_train, y_test, x
     max_proba_value = np.max(proba, axis=-1)
     max_proba_class_names = np.array([target_names[idx] for idx in max_proba_class.flatten()]).reshape(max_proba_class.shape)
 
-    # # Create color scale for each class
+    # Create color scale for each class
     # colors = px.colors.qualitative.Set1[:len(target_names)]
-    # color_scale = []
-    # for i, color in enumerate(colors):
-    #     color_scale.extend([(i/len(target_names), color), ((i+1)/len(target_names), color)])
-    
-    # # 创建预测图
-    # predict_fig = go.Figure()
 
-    # # 添加概率热图
-    # predict_fig.add_trace(
-    #     go.Contour(
-    #         x=xx[0],
-    #         y=yy[:, 0],
-    #         z=max_proba_class,
-    #         customdata= np.dstack((proba, max_proba_value, max_proba_class_names)),
-    #         colorscale=color_scale,
-    #         opacity=0.7,
-    #         showscale=False,
-    #         hovertemplate=(
-    #             f'{x_axis_name}: %{{x:.2f}} <br>'
-    #             f'{y_axis_name}: %{{y:.2f}} <br>'
-    #             f'{target_names[0]}:' + '%{customdata[0]:.2f}<br>'
-    #             f'{target_names[1]}:' + '%{customdata[1]:.2f}<br>'
-    #             f'{target_names[2]}:' + '%{customdata[2]:.2f}<br>'
-    #             '最可能类别: %{customdata[4]}<br>'
-    #         )
-    #     )
-    # )
+    color_scale = px.colors.get_colorscale('Viridis')
+    hex_colors = [c[1] for c in color_scale]
     
-    # 为每个类别分配基础颜色
-    colors = px.colors.qualitative.Set1[:len(target_names)]
+    color_scale = []
+    for i, colour in enumerate(hex_colors):
+        color_scale.extend([(0.1, colour), (0.9, colour)])
     
     # 创建预测图
     predict_fig = go.Figure()
 
-    customdata = np.dstack((proba, max_proba_class_names))
-
-    # 为每个类别绘制独立的等高线
-    for i, target_name in enumerate(target_names):
-        z_class = np.where(max_proba_class == i, max_proba_value, np.nan)
-        
-        # 使用布尔索引直接筛选数据
-        mask = max_proba_class == i
-        x_class = xx[mask]
-        y_class = yy[mask]
-        z_class_filtered = z_class[mask]
-        customdata_filtered = customdata[mask]
-
-        # 添加等高线图
-        predict_fig.add_trace(
-            go.Contour(
-                x=x_class,
-                y=y_class,
-                z=z_class_filtered,
-                customdata=customdata_filtered,
-                colorscale=[[0, colors[i]], [1, colors[i]]],
-                opacity=0.7,
-                showscale=False,
-                hovertemplate=(
-                    f'{x_axis_name}: %{{x:.2f}} <br>'
-                    f'{y_axis_name}: %{{y:.2f}} <br>'
-                    + '<br>'.join([f'{name}: %{{customdata[{j}]:.2f}}' for j, name in enumerate(target_names)])
-                    + '<br>最可能类别: %{customdata[' + str(len(target_names) + 1) + ']}<br>'
-                )
+    # 添加概率热图
+    predict_fig.add_trace(
+        go.Heatmap(
+            x=xx[0],
+            y=yy[:, 0],
+            z=max_proba_class+max_proba_value,
+            customdata= np.dstack((proba, max_proba_class_names)),
+            colorscale=color_scale,
+            opacity=0.7,
+            showscale=False,
+            hovertemplate=(
+                f'{x_axis_name}: %{{x:.2f}} <br>'
+                f'{y_axis_name}: %{{y:.2f}} <br>'
+                f'{target_names[0]}:' + '%{customdata[0]:.2f}<br>'
+                f'{target_names[1]}:' + '%{customdata[1]:.2f}<br>'
+                f'{target_names[2]}:' + '%{customdata[2]:.2f}<br>'
+                '最可能类别: %{customdata[3]}<br>'
             )
         )
+    )
+    
+    # TODO: Add decision boundary or Contour plot
 
     # 添加训练数据和测试数据散点图
     markers = ['circle', 'square', 'diamond', 'cross', 'x']
