@@ -177,11 +177,10 @@ def create_pairplot(X, y, dataset_name, selected_features, target_names):
     
     # Update figure layout
     fig_pairplot.update_layout(
-        title='特征配对图',
+        autosize=True,
         height=1100,
-        width=1200,
         showlegend=True,
-        dragmode='select'
+        dragmode='select',
     )
     
     # Update axes labels
@@ -257,16 +256,131 @@ def create_classifier(classifier_name, svm_kernel, svm_C_power, svm_C_coef, svm_
     model_params = model.get_params()  # Get model parameters
     return model_params
     
-def create_prediction_plot(
-    model, X_train, X_test, y_train, y_test, Z, xx, yy, x_axis_name, y_axis_name, target_names
-):
-    # Create the plot
-    fig = go.Figure()
+def create_prediction_plot(classifier, X, y, X_train, X_test, y_train, y_test, x_axis_name, y_axis_name, selected_features, target_names):
+    # Create meshgrid for decision boundary, x_axis_name and y_axis_name are the selected features
+    index_x = selected_features.index(x_axis_name)
+    index_y = selected_features.index(y_axis_name)
+    x_min, x_max = X[:, index_x].min() - 1, X[:, index_x].max() + 1
+    y_min, y_max = X[:, index_y].min() - 1, X[:, index_y].max() + 1
+    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100), np.linspace(y_min, y_max, 100))
     
-    return prediction_fig
+    pred_point_list = [np.full(xx.ravel().shape, np.mean(X[:, i])) if i not in [index_x, index_y] 
+                       else xx.ravel() if i == index_x else yy.ravel() 
+                       for i in range(len(selected_features))]
+   
+    Z = classifier.predict(np.c_[pred_point_list].T)
+    Z = Z.reshape(xx.shape)
+    proba = classifier.predict_proba(np.c_[pred_point_list].T)
+    proba = proba.reshape(xx.shape + (len(target_names),))
+    
+    proba_test = classifier.predict_proba(X_test)
+
+    proba_test_names = np.array([target_names[idx] for idx in classifier.predict(X_test)])
+    test_real_names = np.array([target_names[idx] for idx in y_test])
+    
+    # Get the index of the class with the highest probability for each point
+    max_proba_class = np.argmax(proba, axis=-1)
+    # Get the highest probability for each point
+    max_proba_value = np.max(proba, axis=-1)
+    max_proba_class_names = np.array([target_names[idx] for idx in max_proba_class.flatten()]).reshape(max_proba_class.shape)
+
+    # Create color scale for each class
+    colors = px.colors.qualitative.Set1[:len(target_names)]
+    color_scale = []
+    for i, color in enumerate(colors):
+        color_scale.extend([(i/len(target_names), color), ((i+1)/len(target_names), color)])
+    
+    # 创建预测图
+    predict_fig = go.Figure()
+
+    # 添加概率热图
+    predict_fig.add_trace(
+        go.Heatmap(
+            x=xx[0],
+            y=yy[:, 0],
+            z=max_proba_class,
+            customdata= np.dstack((proba, max_proba_value, max_proba_class_names)),
+            colorscale=color_scale,
+            opacity=0.7,
+            showscale=False,
+            hovertemplate=(
+                f'{x_axis_name}: %{{x:.2f}} <br>'
+                f'{y_axis_name}: %{{y:.2f}} <br>'
+                f'{target_names[0]}:' + '%{customdata[0]:.2f}<br>'
+                f'{target_names[1]}:' + '%{customdata[1]:.2f}<br>'
+                f'{target_names[2]}:' + '%{customdata[2]:.2f}<br>'
+                '最可能类别: %{customdata[4]}<br>'
+            )
+        )
+    )
+
+    # 添加训练数据和测试数据散点图
+    markers = ['circle', 'square', 'diamond', 'cross', 'x']
+    for i, target in enumerate(target_names):
+        train_mask = y_train == i
+        predict_fig.add_trace(
+            go.Scatter(
+                x=X_train[train_mask, index_x],
+                y=X_train[train_mask, index_y],
+                mode='markers',
+                marker=dict(size=10, symbol=markers[i], line=dict(width=2, color='DarkSlateGrey')),
+                name=f'{target} (训练)',
+                legendgroup='train',
+                showlegend=True,
+                marker_color='rgba(255, 255, 255, 0)',
+                marker_line_color='rgb(0, 0, 0)',
+                marker_line_width=2,
+                customdata=np.array([target] * train_mask.sum()),
+                hovertemplate=(
+                    f'{x_axis_name}: %{{x:.2f}} <br>'
+                    f'{y_axis_name}: %{{y:.2f}} <br>'
+                    '训练点类别: %{customdata}<br>'
+                )
+            )
+        )
+    
+    for i, target in enumerate(target_names):
+        test_mask = y_test == i
+        predict_fig.add_trace(
+            go.Scatter(
+                x=X_test[test_mask, index_x],
+                y=X_test[test_mask, index_y],
+                mode='markers',
+                marker=dict(size=10, symbol=markers[i], line=dict(width=2, color='DarkSlateGrey')),
+                name=f'{target} (测试)',
+                legendgroup='test',
+                showlegend=True,
+                customdata=np.hstack((proba_test[test_mask], proba_test_names[test_mask].reshape(-1, 1),test_real_names[test_mask].reshape(-1,1))),  # 概率+类别名称
+                hovertemplate=(
+                    f'{x_axis_name}: %{{x:.2f}} <br>'
+                    f'{y_axis_name}: %{{y:.2f}} <br>'
+                    f'{target_names[0]}: %{{customdata[0]:.2f}}<br>'
+                    f'{target_names[1]}: %{{customdata[1]:.2f}}<br>'
+                    f'{target_names[2]}: %{{customdata[2]:.2f}}<br>'
+                    '预测类别: %{customdata[3]}<br>'
+                    '实际类别: %{customdata[4]}<br>'
+                )
+            )
+        )
+
+    predict_fig.update_layout(
+        xaxis_title=x_axis_name,
+        yaxis_title=y_axis_name,
+        font_size=18,
+        legend_title='类别',
+        hovermode='closest',
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=-0.2,
+            xanchor="left",
+            x=0.0
+        )
+    )
+    return predict_fig
 
 def create_cm_fig(confusion_matrix, target_names):
-    fig_cm = px.imshow(confusion_matrix, labels=dict(x="Predicted", y="Actual"), x=target_names, y=target_names, title="Confusion Matrix")
+    fig_cm = px.imshow(confusion_matrix, labels=dict(x="Predicted", y="Actual"), x=target_names, y=target_names)
     for i in range(len(target_names)):
         for j in range(len(target_names)):
             fig_cm.add_annotation(
@@ -305,7 +419,6 @@ def roc_curve_fig(model, X_test: np.ndarray, y_test: np.ndarray, target_names: L
         traces.append(trace)
 
     layout = go.Layout(
-        title="ROC Curve",
         xaxis=dict(title="False Positive Rate", gridcolor="#2f3445"),
         yaxis=dict(title="True Positive Rate", gridcolor="#2f3445"),
         legend=dict(x=0, y=1.05, orientation="h"),
@@ -327,87 +440,6 @@ def roc_curve_fig(model, X_test: np.ndarray, y_test: np.ndarray, target_names: L
 
     return figure
 
-def create_prediction_plot(model, X_train, X_test, y_train, y_test, Z, xx, yy, x_axis_name, y_axis_name, target_names):
-    # Create the plot
-    fig = go.Figure()
-
-    # Add decision boundary
-    boundary = go.Contour(
-        x=xx[0],
-        y=yy[:, 0],
-        z=Z.reshape(xx.shape),
-        colorscale='RdBu',
-        opacity=0.6,
-        showscale=False,
-        contours=dict(
-            showlines=False,
-        ),
-        hoverinfo='none'
-    )
-    fig.add_trace(boundary)
-
-    # Add scatter plot for training data
-    for i, target in enumerate(np.unique(y_train)):
-        indices = y_train == target
-        scatter_train = go.Scatter(
-            x=X_train[indices, 0],
-            y=X_train[indices, 1],
-            mode='markers',
-            name=f'Train: {target_names[i]}',
-            marker=dict(
-                size=10,
-                symbol='circle',
-                color=f'rgba({50+i*50}, {100+i*50}, {150+i*50}, 0.8)',
-                line=dict(width=1, color='white')
-            )
-        )
-        fig.add_trace(scatter_train)
-
-    # Add scatter plot for test data
-    for i, target in enumerate(np.unique(y_test)):
-        indices = y_test == target
-        scatter_test = go.Scatter(
-            x=X_test[indices, 0],
-            y=X_test[indices, 1],
-            mode='markers',
-            name=f'Test: {target_names[i]}',
-            marker=dict(
-                size=10,
-                symbol='star',
-                color=f'rgba({50+i*50}, {100+i*50}, {150+i*50}, 0.8)',
-                line=dict(width=1, color='white')
-            )
-        )
-        fig.add_trace(scatter_test)
-
-    # Update layout
-    fig.update_layout(
-        title=dict(text=f'Decision Boundary and Data Points ({type(model).__name__})', x=0.5),
-        xaxis=dict(title=x_axis_name, gridcolor='#2f3445'),
-        yaxis=dict(title=y_axis_name, gridcolor='#2f3445'),
-        legend=dict(x=0, y=1.05, orientation='h'),
-        margin=dict(l=50, r=10, t=50, b=50),
-        plot_bgcolor='#282b38',
-        paper_bgcolor='#282b38',
-        font=dict(color='#a5b1cd'),
-        hoverlabel=dict(bgcolor='white', font_size=12),
-    )
-
-    # Add model performance information
-    train_accuracy = model.score(X_train, y_train)
-    test_accuracy = model.score(X_test, y_test)
-    fig.add_annotation(
-        xref='paper', yref='paper',
-        x=0.02, y=0.98,
-        text=f'Train Accuracy: {train_accuracy:.2f}<br>Test Accuracy: {test_accuracy:.2f}',
-        showarrow=False,
-        font=dict(color='white'),
-        bgcolor='rgba(0,0,0,0.5)',
-        bordercolor='white',
-        borderwidth=1
-    )
-
-    return fig
 # Layout of the Dash app
 app.layout = html.Div([
     html.Div(
@@ -774,6 +806,7 @@ def update_pairplot(dataset_name, selected_features):
         return create_pairplot(X, y, dataset_name, selected_features, target_names)
     return go.Figure()
 
+
 @app.callback(
     [Output('prediction-confidence', 'figure'),
      Output('roc-curve', 'figure'),
@@ -803,100 +836,7 @@ def train_model_and_update_figure(model_name, model_params, dataset_name, select
     classifier = models[model_name](**model_params)
     classifier.fit(X_train, y_train)
     
-    # Create meshgrid for decision boundary, x_axis_name and y_axis_name are the selected features
-    index_x = selected_features.index(x_axis_name)
-    index_y = selected_features.index(y_axis_name)
-    x_min, x_max = X[:, index_x].min() - 1, X[:, index_x].max() + 1
-    y_min, y_max = X[:, index_y].min() - 1, X[:, index_y].max() + 1
-    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100), np.linspace(y_min, y_max, 100))
-    
-    pred_point_list = [np.full(xx.ravel().shape, np.mean(X[:, i])) if i not in [index_x, index_y] 
-                       else xx.ravel() if i == index_x else yy.ravel() 
-                       for i in range(len(selected_features))]
-   
-    Z = classifier.predict(np.c_[pred_point_list].T)
-    Z = Z.reshape(xx.shape)
-    proba = classifier.predict_proba(np.c_[pred_point_list].T)
-    proba = proba.reshape(xx.shape + (len(target_names),))
-   
-    diff = proba.max(axis=-1) - (proba.sum(axis=-1) - proba.max(axis=-1))
-   
-    symbol_list = ['circle', 'star', 'diamond', 'cross', 'x']
-    symbol_map = {target: symbol for target, symbol in zip(target_names, symbol_list)}
-    color_map = {target: px.colors.qualitative.Set1[i] for i, target in enumerate(target_names)}
-   
-    # 创建预测图
-    predict_fig = go.Figure()
-
-    # 添加决策边界热力图
-    predict_fig.add_trace(
-        go.Heatmap(
-            x=xx[0],
-            y=yy[:, 0],
-            z=proba.max(axis=-1),
-            customdata=proba,
-            colorscale='RdBu',
-            opacity=0.4,
-            showscale=True,
-            hovertemplate=(
-                f'{x_axis_name}: %{{x:.2f}} <br>'
-                f'{y_axis_name}: %{{y:.2f}} <br>'
-                f'{target_names[0]}:' + '%{customdata[0]:.2f}<br>'
-                f'{target_names[1]}:' + '%{customdata[1]:.2f}<br>'
-                f'{target_names[2]}:' + '%{customdata[2]:.2f}<br>'
-            )
-        )
-    )
-
-    # 添加训练数据和测试数据散点图
-    markers = ['circle', 'square', 'diamond', 'cross', 'x']
-    for i, target in enumerate(target_names):
-        train_mask = y_train == i
-        test_mask = y_test == i
-        
-        predict_fig.add_trace(
-            go.Scatter(
-                x=X_train[train_mask, index_x],
-                y=X_train[train_mask, index_y],
-                mode='markers',
-                marker=dict(size=10, symbol=markers[i], line=dict(width=2, color='DarkSlateGrey')),
-                name=f'{target} (训练)',
-                legendgroup='train',
-                showlegend=True,
-                marker_color='rgba(255, 255, 255, 0)',
-                marker_line_color='rgb(0, 0, 0)',
-                marker_line_width=2
-            )
-        )
-        
-        predict_fig.add_trace(
-            go.Scatter(
-                x=X_test[test_mask, index_x],
-                y=X_test[test_mask, index_y],
-                mode='markers',
-                marker=dict(size=10, symbol=markers[i], line=dict(width=2, color='DarkSlateGrey')),
-                name=f'{target} (测试)',
-                legendgroup='test',
-                showlegend=True,
-            )
-        )
-
-    predict_fig.update_layout(
-        title='预测置信度和决策边界',
-        xaxis_title=x_axis_name,
-        yaxis_title=y_axis_name,
-        legend_title='类别',
-        hovermode='closest',
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=-0.2,
-            xanchor="left",
-            x=0.0
-        )
-    )
-    
-    # predict_fig =  create_prediction_plot(classifier, X_train, X_test, y_train, y_test, Z, xx, yy, x_axis_name, y_axis_name, target_names)
+    predict_fig =  create_prediction_plot(classifier, X, y, X_train, X_test, y_train, y_test, x_axis_name, y_axis_name, selected_features, target_names)
     
     roc_fig = roc_curve_fig(classifier, X_test, y_test, target_names)
     
