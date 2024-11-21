@@ -1,6 +1,10 @@
-/__pycache__/
+__pycache__
 /.vscode/
 /.pytest_cache/
 *.ipynb
 *.pyc
 /.venv/
+/*.dist/
+/*.build/
+/output
+*.exe

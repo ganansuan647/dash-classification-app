@@ -78,57 +78,46 @@ def load_data(dataset_name, selected_features):
         X = df[selected_features].values
         return X, y, feature_names, target_names
 
-# 添加字段选择组件到布局
-@app.callback(
-    Output('feature-selector-container', 'children'),
-    Input('dataset-dropdown', 'value')
-)
-def create_feature_selector(dataset_name):
-    # 根据数据集名称获取可用字段
-    feature_names = load_data(dataset_name, None)
-    available_features = feature_names
-    
-    # Get initial selected features (first 5 or all if less than 5)
-    initial_features = available_features[:5] if len(available_features) > 5 else available_features
-
-    return html.Div([
-        html.H4("特征选择"),
-        html.Div([
-            dbc.Button("全选", id="select-all-btn", n_clicks=0, className="me-2"),
-            dbc.Button("全不选", id="deselect-all-btn", n_clicks=0, className="me-2"),
-            dbc.Button("反选", id="toggle-select-btn", n_clicks=0)
-        ], className="mb-3"),
-        dbc.Checklist(
-            id='feature-checklist',
-            options=[{'label': feat, 'value': feat} for feat in available_features],
-            value=initial_features,  # Default to first 5 or all features
-            inline=False
-        ),
-    ])
-    
 # function to update 
 @app.callback(
+    [Output('feature-checklist', 'options'),
     Output('feature-checklist', 'value'),
+    Output('current-dataset','data')],
+    Input('dataset-dropdown', 'value'),
+    Input('current-dataset','data'),
     Input('select-all-btn', 'n_clicks'),
     Input('deselect-all-btn', 'n_clicks'),
     Input('toggle-select-btn', 'n_clicks'),
-    State('feature-checklist', 'options'),
-    State('feature-checklist', 'value')
+    Input('feature-checklist', 'options'),
+    Input('feature-checklist', 'value'),
 )
-def update_feature_selection(select_all, deselect_all, toggle_select, options, current_value):
-    # Get the ID of the button that triggered the callback
-    ctx = callback_context
-    button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    
-    # Update the selected features based on the button clicked
-    if button_id == 'select-all-btn':
-        return [option['value'] for option in options]
-    elif button_id == 'deselect-all-btn':
-        return []
-    elif button_id == 'toggle-select-btn':
-        return [option for option in options if option['value'] not in current_value]
-
-    return current_value
+def update_feature_options_and_selection(dataset_name,current_dataset, select_all, deselect_all, toggle_select, options, current_value):
+    if dataset_name!= current_dataset:
+        # 根据数据集名称获取可用字段
+        feature_names = load_data(dataset_name, None)
+        available_features = feature_names
+        
+        # Get initial selected features (first 4 or all if less than 4)
+        initial_features = available_features[:4] if len(available_features) > 4 else available_features
+        
+        selected_features = initial_features
+    else:
+        available_features = [option['value'] for option in options]
+        # Get the ID of the button that triggered the callback
+        ctx = callback_context
+        button_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        
+        # Update the selected features based on the button clicked
+        if button_id == 'select-all-btn':
+            selected_features = [option['value'] for option in options]
+        elif button_id == 'deselect-all-btn':
+            selected_features = []
+        elif button_id == 'toggle-select-btn':
+            selected_features = [option['value'] for option in options if option['value'] not in current_value]
+        else:
+            selected_features = current_value
+            
+    return [{'label': feat, 'value': feat} for feat in available_features],selected_features,dataset_name
 
 def create_pairplot(X, y, dataset_name, selected_features, target_names):
     # Create DataFrame from X and y
@@ -520,7 +509,19 @@ app.layout = html.Div([
                             {'label': '桥梁震后损伤状态', 'value': '桥梁震后损伤状态'}],
                     value='Iris'
                 ),
-                html.Div(id='feature-selector-container'),  # Move feature selector container here
+                html.H4("特征选择"),
+                html.Div([
+                    dbc.Button("全选", id="select-all-btn", n_clicks=0),
+                    dbc.Button("全不选", id="deselect-all-btn", n_clicks=0,),
+                    dbc.Button("反选", id="toggle-select-btn", n_clicks=0,),
+                ]),
+                dcc.Checklist(
+                    id='feature-checklist',
+                    options=[],  # Options will be added dynamically
+                    value=[],
+                    inline=False
+                ),
+                # html.Div(id='feature-selector-container'),  # Move feature selector container here
             ]),
             dcc.Tab(label='分类器', children=[
                 html.H3('选择分类器'),
@@ -783,6 +784,7 @@ app.layout = html.Div([
     ], style={'width': '75%', 'display': 'inline-block', 'padding': '10px', 'vertical-align': 'top'}),
     dcc.Store(id='classification-model-params'),
     dcc.Store(id='current-model-params'),
+    dcc.Store(id='current-dataset')
 ])
 
 @app.callback(
@@ -833,6 +835,8 @@ def update_pairplot(dataset_name, selected_features):
     ]
 )
 def train_model_and_update_figure(model_name, model_params, dataset_name, selected_features,x_axis_name,y_axis_name):
+    if len(selected_features)<2:
+        return go.Figure(),go.Figure(),go.Figure()
     X, y, _, target_names = load_data(dataset_name, selected_features)
     # Split data into training and test sets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
@@ -858,7 +862,6 @@ def train_model_and_update_figure(model_name, model_params, dataset_name, select
     cm_fig = create_cm_fig(confusion_matrix(y_test, classifier.predict(X_test)), target_names)
     
     return predict_fig, roc_fig, cm_fig
-    
 
 if __name__ == '__main__':
     app.run_server(debug=True)

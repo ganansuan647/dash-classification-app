@@ -60,9 +60,15 @@
     ```
 5. 打包为单一exe文件（可选）:
     ```bash
+    # 使用pyinstaller打包比较简单，但文件会略大
     pip install pyinstaller
     pyinstaller --onefile classification_app.py
+
+    # 使用nuitka打包，文件会小一些
+    pip install nuitka
+    nuitka --mingw64 --show-progress --plugin-enable=upx --standalone --onefile classification_app.py
     ```
+    **注意**：nuitka打包可能需要下载[mingw64](https://winlibs.com/),并将mingw64/bin目录添加至环境变量 (*注意这里不要有中文*)
 6. 自行修改后更新uv依赖（可选）:
     ```bash
     # 添加你需要的包
@@ -72,13 +78,8 @@
     uv pip compile pyproject.toml -o requirements.txt
     ```
 
-
 ## 作者
 
-- **苟凌云**
+- [**苟凌云**](https://github.com/ganansuan647)
 - **邮箱**: 2410100@tongji.edu.cn
 - **小组成员**: 苟凌云、易航、齐新宇、何帅君、李鸿豪
-
-## 许可证
-
-此项目基于MIT许可证 - 详见[LICENSE](LICENSE)文件。
