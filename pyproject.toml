@@ -3,12 +3,13 @@ name = "Classification_Explorer"
 version = "0.1.0"
 description = "一个采用Dash编写的轻量级可视化APP，用于探索不同分类器在各种参数和不同数据集上的性能。该应用程序允许用户选择数据集、选择特征并配置分类器参数，以可视化分类结果。"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.8"
 dependencies = [
     "dash-bootstrap-components>=1.6.0",
     "dash>=2.18.2",
+    "numpy>=1.24.4",
     "openpyxl>=3.1.5",
-    "pandas>=2.2.3",
+    "pandas>=2.0.3",
     "plotly>=5.24.1",
-    "scikit-learn>=1.5.2",
+    "scikit-learn>=1.3.2",
 ]

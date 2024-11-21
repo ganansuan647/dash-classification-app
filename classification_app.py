@@ -1,24 +1,24 @@
+import os
+from typing import Dict, List, Tuple
+
 import dash
-from dash import dcc, html
-from dash.dependencies import Input, Output, State
-from dash import callback_context
-from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
-import plotly.express as px
-from plotly import colors
+import numpy as np
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
+from dash import callback_context, dcc, html
+from dash.dependencies import Input, Output, State
+from dash.exceptions import PreventUpdate
 from plotly.subplots import make_subplots
 from sklearn import datasets
-from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC
-from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import auc, confusion_matrix, roc_curve
+from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import roc_curve, auc, confusion_matrix
-import numpy as np
-from typing import List, Dict, Tuple
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 
 import utils.dash_reusable_components as drc
 
@@ -33,12 +33,18 @@ app = dash.Dash(
 
 # Function to load dataset and process it
 def load_data(dataset_name, selected_features):
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     if dataset_name == 'Iris':
         data = datasets.load_iris()
         X, y = data.data, data.target
         feature_names, target_names = data.feature_names, data.target_names
-    elif dataset_name == 'RC墩柱破坏模式':
-        data = pd.read_excel('dataset/数据集2_RC墩柱破坏模式预测.xlsx')
+    elif dataset_name == 'RC_Pier_Column_Failure_Mode':
+        file_path = os.path.join(base_dir, "dataset/dataset2_RC_Pier_Column_Failure_Mode.xlsx")
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        data = pd.read_excel(file_path)
         data = data.rename(columns={data.columns[0]: 'Index'}).drop(columns=['Index'])
         
         # Extract features and target
@@ -54,8 +60,13 @@ def load_data(dataset_name, selected_features):
         X = scaler.fit_transform(X)
         
         target_names = sorted(data['Failure Mode'].unique())
-    elif dataset_name == '桥梁震后损伤状态':
-        data = pd.read_excel('dataset/数据集6_桥梁震后损伤状态预测.xlsx')
+    elif dataset_name == 'Bridge_Post_Earthquake_Damage_State':
+        file_path = os.path.join(base_dir, "dataset/dataset6_Bridge_Post_Earthquake_Damage_State.xlsx")
+
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
+        
+        data = pd.read_excel(file_path)
         data = preprocess_bridge_data(data)
         
         # Extract features and target
@@ -128,7 +139,7 @@ def create_pairplot(X, y, dataset_name, selected_features, target_names):
     fig_pairplot = make_subplots(rows=len(selected_features), cols=len(selected_features))
     
     # Define color scheme for all classes
-    if dataset_name == '桥梁震后损伤状态':
+    if dataset_name == 'Bridge_Post_Earthquake_Damage_State':
         color_scheme = {target_names[0]: 'green', target_names[1]: 'yellow', target_names[2]: 'red'}
     else:
         colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']  # Default plotly colors
@@ -504,9 +515,9 @@ app.layout = html.Div([
                 html.H3('选择数据集'),
                 dcc.Dropdown(
                     id='dataset-dropdown',
-                    options=[{'label': 'Iris Dataset', 'value': 'Iris'},
-                            {'label': 'RC墩柱破坏模式', 'value': 'RC墩柱破坏模式'},
-                            {'label': '桥梁震后损伤状态', 'value': '桥梁震后损伤状态'}],
+                    options=[{'label': '鸢尾花(Iris)数据集', 'value': 'Iris'},
+                            {'label': 'RC墩柱失效模式数据集', 'value': 'RC_Pier_Column_Failure_Mode'},
+                            {'label': '桥梁震后损伤状态数据集', 'value': 'Bridge_Post_Earthquake_Damage_State'}],
                     value='Iris'
                 ),
                 html.H4("特征选择"),

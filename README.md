@@ -63,7 +63,15 @@
     # 使用pyinstaller打包比较简单，但文件会略大
     pip install pyinstaller
     pyinstaller --onefile classification_app.py
+    ```
+    **注意**：pyinstaller打包时对于用到的文件以及一些特定的包可能会有问题，需要对打包配置文件([classification_app.spec](/classification_app.spec))进行修改，修改完可以利用如下命令重新打包：
+    ```bash
+    pyinstaller classification_app.spec
+    ```
+    更详细的spec配置文件修改方法请参考[pyinstaller官方文档](https://pyinstaller.readthedocs.io/en/stable/usage.html)。
 
+    也可以有其他的打包方式，如使用nuitka：
+    ```bash
     # 使用nuitka打包，文件会小一些
     pip install nuitka
     nuitka --mingw64 --show-progress --plugin-enable=upx --standalone --onefile classification_app.py
