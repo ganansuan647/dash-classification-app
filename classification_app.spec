@@ -32,6 +32,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
+    icon="assets/icon.ico",
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
