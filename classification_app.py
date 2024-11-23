@@ -838,6 +838,7 @@ def update_pairplot(dataset_name, selected_features):
      Output('roc-curve', 'figure'),
      Output('confusion-matrix', 'figure')],
     [Input('classifier-dropdown', 'value'),
+     Input('current-model-params', 'data'),
      Input('classification-model-params', 'data'),
      Input('dataset-dropdown', 'value'),
      Input('feature-checklist', 'value'),
@@ -845,7 +846,9 @@ def update_pairplot(dataset_name, selected_features):
      Input('y-axis-dropdown', 'value')
     ]
 )
-def train_model_and_update_figure(model_name, model_params, dataset_name, selected_features,x_axis_name,y_axis_name):
+def train_model_and_update_figure(model_name, current_model, model_params, dataset_name, selected_features,x_axis_name,y_axis_name):
+    if model_name != current_model['name']:
+        return go.Figure(), go.Figure(),go.Figure()
     if len(selected_features)<2:
         return go.Figure(),go.Figure(),go.Figure()
     X, y, _, target_names = load_data(dataset_name, selected_features)
